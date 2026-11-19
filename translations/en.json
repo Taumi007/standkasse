@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Standkasse",
+        "description": "Serves the public till page for market stands (at /kasse/) and logs completed receipts. Manage stands, operators and product lists in the »Standkasse« panel."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Standkasse is already set up."
+    }
+  }
+}

@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#121418">
+<title>Standkasse</title>
+<style>
+:root {
+  --bg: #121418;
+  --panel: #1b1e24;
+  --tile: #272b33;
+  --tile-hit: #3a4150;
+  --line: #313640;
+  --text: #f4f5f7;
+  --muted: #c8cdd6;
+  --accent: #ffb22e;
+  --accent-ink: #1a1200;
+  --ret: #34c77b;
+  --ret-bg: #15301f;
+  --payout: #34c77b;
+  --danger: #ff6b6b;
+  --radius: 14px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 20px;
+  overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- Layout ---------- */
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 38%);
+  height: 100vh; height: 100dvh;
+}
+@media (orientation: portrait) {
+  .app { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 50%); }
+  .right { border-left: 0 !important; border-top: 1px solid var(--line); }
+}
+.left {
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: max(14px, env(safe-area-inset-top)) 14px 14px max(14px, env(safe-area-inset-left));
+}
+.right {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; min-height: 0;
+  padding-right: env(safe-area-inset-right);
+  position: relative;
+}
+
+/* ---------- Kacheln ---------- */
+.section-title {
+  font-size: 15px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 4px 2px 8px;
+}
+.section-title + .grid { margin-bottom: 18px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 10px;
+}
+.tile {
+  position: relative;
+  min-height: 112px;
+  border: 0; border-radius: var(--radius);
+  background: var(--tile);
+  padding: 12px 14px 10px;
+  text-align: left;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
+  transition: transform .07s ease, background-color .2s ease;
+}
+.tile:active { transform: scale(.96); }
+.tile.hit { animation: hit .35s ease; }
+@keyframes hit { 0% { background: var(--tile-hit); } 100% { background: var(--tile); } }
+.tile .name { font-size: 24px; font-weight: 700; line-height: 1.15; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+.tile .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.tile .price { font-size: 25px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+.tile .dep { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.tile .badge {
+  position: absolute; top: -7px; right: -7px;
+  min-width: 36px; height: 36px; padding: 0 9px; border-radius: 18px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 20px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.tile.ret { background: var(--ret-bg); box-shadow: inset 0 0 0 2px var(--ret); }
+.tile.ret.hit { animation: hitret .35s ease; }
+@keyframes hitret { 0% { background: #22603b; } 100% { background: var(--ret-bg); } }
+.tile.ret .price { color: var(--ret); }
+.tile.ret .badge { background: var(--ret); color: #04170c; }
+
+/* ---------- Bon ---------- */
+.bon-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.bon-head .stand { font-size: 22px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { font-size: 14px; color: var(--muted); text-align: right; }
+.status.warn { color: var(--accent); }
+.status.err { color: var(--danger); }
+
+.lines { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 12px; min-height: 0; }
+.empty { color: var(--muted); text-align: center; padding: 28px 10px; font-size: 20px; }
+.line {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+}
+.line:last-child { border-bottom: 0; }
+.stepper { display: flex; align-items: center; }
+.stepper button {
+  width: 48px; height: 48px; border-radius: 12px; border: 0;
+  background: var(--tile); font-size: 28px; font-weight: 700; line-height: 1;
+}
+.stepper button:active { background: var(--tile-hit); }
+.stepper .qty { min-width: 42px; text-align: center; font-size: 24px; font-weight: 800; }
+.line .lname { font-size: 21px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.line .lsub { font-size: 15px; color: var(--muted); }
+.line .lamt { font-size: 22px; font-weight: 700; text-align: right; white-space: nowrap; }
+.line.ret .lname { color: var(--ret); }
+
+/* ---------- Summen ---------- */
+.totals { border-top: 1px solid var(--line); padding: 10px 16px 0; }
+.trow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 19px; color: var(--muted); }
+.trow + .trow { margin-top: 2px; }
+.trow .v { color: var(--text); font-weight: 600; white-space: nowrap; }
+.trow .hint { font-size: 15px; }
+.grand {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  margin-top: 6px;
+}
+.grand .label { font-size: 22px; font-weight: 700; color: var(--muted); }
+.grand .value { font-size: 64px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; white-space: nowrap; }
+.grand.payout .label, .grand.payout .value { color: var(--payout); }
+.bump { animation: bump .25s ease; }
+@keyframes bump { 0% { transform: scale(1.06); } 100% { transform: scale(1); } }
+
+/* ---------- Bargeld ---------- */
+.cash { padding: 10px 16px 0; }
+.cash-btns { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 8px; }
+.cash-btns button { white-space: nowrap; padding: 0 4px; }
+.cash-btns button {
+  height: 54px; border-radius: 12px; border: 2px solid var(--line); background: transparent;
+  font-size: 21px; font-weight: 700;
+}
+.cash-btns button.sel { background: var(--text); color: var(--bg); border-color: var(--text); }
+.cash-btns button:disabled { opacity: .25; }
+.change {
+  margin-top: 10px; padding: 10px 14px; border-radius: 12px;
+  background: #2a2410; color: var(--accent);
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+}
+.change .label { font-size: 20px; font-weight: 700; }
+.change .value { font-size: 40px; font-weight: 800; white-space: nowrap; }
+
+.actions { padding: 12px 16px max(14px, env(safe-area-inset-bottom)); }
+.next {
+  width: 100%; height: 66px; border: 0; border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 24px; font-weight: 800;
+}
+.next:disabled { background: var(--tile); color: var(--muted); }
+.next:not(:disabled):active { transform: scale(.98); }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: absolute; left: 16px; right: 16px; bottom: 96px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: #e9ebef; color: #121418; border-radius: 12px; padding: 10px 10px 10px 16px;
+  font-size: 19px; font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  opacity: 0; transform: translateY(10px); pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: none; pointer-events: auto; }
+.toast button { border: 0; background: #121418; color: #fff; border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 18px; }
+
+.notice { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #3a1d1d; color: #ffd2d2; font-size: 17px; }
+.notice.warn { background: #3a2f12; color: #ffe2a6; }
+.notice code { font-size: 15px; }
+
+/* Kleine Bildschirme (Handy) */
+@media (max-width: 700px) and (orientation: portrait) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .tile { min-height: 92px; }
+  .tile .name { font-size: 19px; }
+  .tile .price { font-size: 20px; }
+  .grand .value { font-size: 44px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="left">
+    <div id="notices"></div>
+    <div id="retSection" hidden>
+      <div class="section-title">Pfand zurück</div>
+      <div id="retGrid" class="grid"></div>
+    </div>
+    <div class="section-title">Produkte</div>
+    <div id="prodGrid" class="grid"></div>
+  </main>
+
+  <aside class="right">
+    <div class="bon-head">
+      <div class="stand" id="standName">Bon</div>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="lines" id="lines"></div>
+
+    <div class="totals">
+      <div class="trow"><span>Waren</span><span class="v num" id="tGoods">0,00 €</span></div>
+      <div class="trow" id="pfandRow"><span>Pfand <span class="hint" id="tPfandHint"></span></span><span class="v num" id="tPfand">0,00 €</span></div>
+      <div class="grand" id="grand"><span class="label" id="grandLabel">Zu zahlen</span><span class="value num" id="grandValue">0,00 €</span></div>
+    </div>
+
+    <div class="cash" id="cash">
+      <div class="cash-btns" id="cashBtns"></div>
+      <div class="change" id="change" hidden><span class="label">Rückgeld</span><span class="value num" id="changeValue"></span></div>
+    </div>
+
+    <div class="actions">
+      <button class="next" id="nextBtn" disabled>Nächster Kunde</button>
+    </div>
+
+    <div class="toast" id="toast"><span id="toastText">Bon geleert</span><button id="undoBtn">Rückgängig</button></div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+
+/* ===== Konfiguration über URL =====
+   ?productlist=getranke.csv   Produktliste (Name,Preis,Pfand)
+   ?depositlist=deposit.csv    Pfand-Rückgabe (Name,Pfand)
+   ?stand=Getränke             Anzeigename des Standes (optional)
+*/
+const params = new URLSearchParams(location.search);
+// Modus 1 (Integration): ?s=<Stand-ID>&k=<Schlüssel>  → Listen vom Server, Bons werden protokolliert
+// Modus 2 (nur CSV):     ?productlist=…&depositlist=…  → reiner Rechner, nichts wird gesendet
+const SID = params.get("s") || "";
+const SKEY = params.get("k") || "";
+const API = SID && SKEY ? "/api/standkasse" : "";
+const PRODUCT_URL = params.get("productlist") || "products.csv";
+const DEPOSIT_URL = params.get("depositlist") || "deposit.csv";
+let STAND = params.get("stand") || "";
+const CASH_NOTES = [500, 1000, 2000, 5000];      // in Cent
+const LS = "kasse:";
+const CART_KEY = LS + "cart:" + (API ? "s:" + SID : PRODUCT_URL);
+const QUEUE_KEY = LS + "queue:" + SID;
+const SEND_DELAY = 6500;                          // so lange ist „Rückgängig“ möglich
+
+let products = [];   // {key, name, price, pfand}   (Cent)
+let deposits = [];   // {key, name, value}          (Cent)
+let cart = [];       // {key, kind:'p'|'r', name, price, pfand, qty}
+let given = null;    // Cent, oder null
+let undoState = null, toastTimer = null;
+let lastTotal = null;
+
+const $ = id => document.getElementById(id);
+
+/* ---------- Hilfen ---------- */
+function eur(c, signed) {
+  const neg = c < 0;
+  const s = (Math.abs(c) / 100).toFixed(2).replace(".", ",") + " €";
+  if (neg) return "−" + s;
+  return signed && c > 0 ? "+" + s : s;
+}
+function toCents(s) {
+  if (s == null) return 0;
+  s = String(s).replace(/€/g, "").replace(/\s/g, "").replace(",", ".");
+  if (s === "") return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+}
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+/* ---------- CSV ---------- */
+// Akzeptiert Komma- oder Semikolon-getrennt, Dezimalpunkt oder (bei ;) Dezimalkomma,
+// Kopfzeile, Leerzeilen und #-Kommentare.
+function parseCSV(text, file, minNumbers, warnings) {
+  const rows = [];
+  text.replace(/^﻿/, "").split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) return;
+    const sep = line.includes(";") ? ";" : ",";
+    const cols = line.split(sep).map(c => c.trim().replace(/^"(.*)"$/, "$1").trim());
+    const name = cols[0];
+    const nums = cols.slice(1).map(toCents);
+    if (!name || nums.length < minNumbers || nums.slice(0, minNumbers).some(Number.isNaN)) {
+      if (rows.length === 0 && i === 0) return; // Kopfzeile
+      warnings.push(`${file}, Zeile ${i + 1} ignoriert: „${line}“`);
+      return;
+    }
+    rows.push({ name, nums: nums.map(n => Number.isNaN(n) ? 0 : n) });
+  });
+  return rows;
+}
+
+async function loadText(url) {
+  const cacheKey = LS + "csv:" + url;
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const t = await r.text();
+    lsSet(cacheKey, t);
+    return { text: t, cached: false };
+  } catch (e) {
+    const t = lsGet(cacheKey);
+    if (t != null) return { text: t, cached: true };
+    throw new Error(`${url} konnte nicht geladen werden (${e.message})`);
+  }
+}
+
+async function loadLists() {
+  return API ? loadStand() : loadCsvLists();
+}
+
+// Integration: Standkonfiguration (Name, Listen) vom Server, mit Offline-Kopie
+async function loadStand() {
+  const cacheKey = LS + "stand:" + SID;
+  let cfg = null, offline = false, error = "";
+  try {
+    const r = await fetch(`${API}/client?s=${encodeURIComponent(SID)}&k=${encodeURIComponent(SKEY)}`, { cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(j.error || "HTTP " + r.status), { fatal: r.status === 403 });
+    cfg = j;
+    lsSet(cacheKey, JSON.stringify(j));
+  } catch (e) {
+    if (e.fatal) error = e.message;
+    else {
+      try { cfg = JSON.parse(lsGet(cacheKey) || "null"); } catch (x) {}
+      offline = true;
+      if (!cfg) error = "Server nicht erreichbar, noch keine Produktliste gespeichert";
+    }
+  }
+  if (error) cfg = null;
+  products = (cfg?.products || []).map(p => ({ key: "p:" + p.name, name: p.name, price: p.price, pfand: p.pfand }));
+  deposits = (cfg?.deposits || []).map(d => ({ key: "r:" + d.name, name: d.name, value: d.value }));
+  if (cfg?.name) { STAND = cfg.name; $("standName").textContent = STAND; document.title = STAND + " · Standkasse"; }
+
+  const n = $("notices");
+  n.innerHTML = "";
+  if (error) n.appendChild(el("div", "notice", error));
+  (cfg?.warnings || []).forEach(m => n.appendChild(el("div", "notice warn", m)));
+  listState = error ? "err" : offline ? "offline" : "ok";
+  updateStatus();
+  renderTiles();
+  render();
+}
+
+async function loadCsvLists() {
+  const warnings = [], errors = [];
+  let offline = false;
+
+  try {
+    const r = await loadText(PRODUCT_URL);
+    offline ||= r.cached;
+    products = parseCSV(r.text, PRODUCT_URL, 1, warnings)
+      .map(x => ({ key: "p:" + x.name, name: x.name, price: x.nums[0], pfand: x.nums[1] || 0 }));
+  } catch (e) { errors.push(e.message); }
+
+  try {
+    const r = await loadText(DEPOSIT_URL);
+    offline ||= r.cached;
+    deposits = parseCSV(r.text, DEPOSIT_URL, 1, warnings)
+      .map(x => ({ key: "r:" + x.name, name: x.name, value: Math.abs(x.nums[0]) }));
+  } catch (e) { if (params.has("depositlist")) errors.push(e.message); }
+
+  const n = $("notices");
+  n.innerHTML = "";
+  errors.forEach(m => n.appendChild(el("div", "notice", m)));
+  warnings.forEach(m => n.appendChild(el("div", "notice warn", m)));
+
+  listState = errors.length ? "err" : offline ? "offline" : "ok";
+  updateStatus();
+  renderTiles();
+  render();
+}
+
+/* ---------- Status oben rechts ---------- */
+let listState = "ok", sendState = "ok";
+function updateStatus() {
+  const st = $("status");
+  const waiting = queue().length;
+  let text = "", cls = "status";
+  if (listState === "err") { text = "Fehler beim Laden"; cls += " err"; }
+  else if (listState === "offline") { text = "Offline · gespeicherte Liste"; cls += " warn"; }
+  if (API && waiting && sendState !== "ok") {
+    text = (text ? text + " · " : "") + `${waiting} Bon${waiting === 1 ? "" : "s"} nicht gesendet`;
+    if (!cls.includes("err")) cls = "status warn";
+  }
+  if (!text && API) text = deviceName() ? "✓ " + deviceName() : "✓ verbunden";
+  st.textContent = text; st.className = cls;
+}
+
+/* ---------- Gerät ---------- */
+function randomId() {
+  const b = new Uint8Array(12);
+  crypto.getRandomValues(b);
+  return Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+}
+function deviceId() {
+  let id = lsGet(LS + "device");
+  if (!id) { id = randomId(); lsSet(LS + "device", id); }
+  return id;
+}
+function deviceName() { return lsGet(LS + "deviceName") || ""; }
+$("standName").addEventListener("click", () => {
+  if (!API) return;
+  const n = prompt("Name dieses Geräts (z. B. „iPad 2“):", deviceName());
+  if (n !== null) { lsSet(LS + "deviceName", n.trim().slice(0, 40)); updateStatus(); }
+});
+
+/* ---------- Bons senden (mit Warteschlange) ---------- */
+function queue() { try { return JSON.parse(lsGet(QUEUE_KEY) || "[]"); } catch (e) { return []; } }
+function saveQueue(q) { lsSet(QUEUE_KEY, JSON.stringify(q)); }
+function enqueue(sale) { const q = queue(); q.push(sale); saveQueue(q); setTimeout(flush, SEND_DELAY + 200); }
+function dequeue(id) { saveQueue(queue().filter(s => s.id !== id)); }
+
+let flushing = false;
+async function flush() {
+  if (!API || flushing) return;
+  const ready = queue().filter(s => Date.now() - s.queuedAt >= SEND_DELAY).slice(0, 50);
+  if (!ready.length) { updateStatus(); return; }
+  flushing = true;
+  try {
+    const r = await fetch(`${API}/sales`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ s: SID, k: SKEY, sales: ready.map(({ queuedAt, ...s }) => s) }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await r.json();
+    // angenommene und abgelehnte Bons sind erledigt
+    const done = new Set(ready.map(s => s.id));
+    saveQueue(queue().filter(s => !done.has(s.id)));
+    sendState = "ok";
+    if (listState === "offline") loadLists();   // wieder online: Liste auffrischen
+  } catch (e) {
+    sendState = "err";
+  } finally {
+    flushing = false;
+    updateStatus();
+  }
+  if (sendState === "ok" && queue().some(s => Date.now() - s.queuedAt >= SEND_DELAY)) flush();
+}
+setInterval(flush, 15000);
+window.addEventListener("online", flush);
+
+/* ---------- Kacheln ---------- */
+function renderTiles() {
+  const rg = $("retGrid"), pg = $("prodGrid");
+  rg.innerHTML = ""; pg.innerHTML = "";
+  $("retSection").hidden = deposits.length === 0;
+
+  deposits.forEach(d => {
+    const b = el("button", "tile ret");
+    b.dataset.key = d.key;
+    b.appendChild(el("div", "name", d.name + " zurück"));
+    const m = el("div", "meta");
+    m.appendChild(el("span", "dep", "Pfand"));
+    m.appendChild(el("span", "price num", eur(-d.value)));
+    b.appendChild(m);
+    b.addEventListener("click", () => { add({ key: d.key, kind: "r", name: d.name, price: 0, pfand: -d.value }); hit(b); });
+    rg.appendChild(b);
+  });
+
+  products.forEach(p => {
+    const b = el("button", "tile");
+    b.dataset.key = p.key;
+    b.appendChild(el("div", "name", p.name));
+    const m = el("div", "meta");
+    m.appendChild(el("span", "dep", p.pfand ? "+ " + eur(p.pfand) + " Pfand" : ""));
+    m.appendChild(el("span", "price num", eur(p.price)));
+    b.appendChild(m);
+    b.addEventListener("click", () => { add({ key: p.key, kind: "p", name: p.name, price: p.price, pfand: p.pfand }); hit(b); });
+    pg.appendChild(b);
+  });
+}
+
+function hit(b) {
+  b.classList.remove("hit"); void b.offsetWidth; b.classList.add("hit");
+  if (navigator.vibrate) navigator.vibrate(8);
+}
+
+function updateBadges() {
+  document.querySelectorAll(".tile").forEach(t => {
+    const line = cart.find(l => l.key === t.dataset.key);
+    let badge = t.querySelector(".badge");
+    if (line && line.qty > 0) {
+      if (!badge) { badge = el("span", "badge num"); t.appendChild(badge); }
+      badge.textContent = line.qty;
+    } else if (badge) badge.remove();
+  });
+}
+
+/* ---------- Warenkorb ---------- */
+function add(item) {
+  const line = cart.find(l => l.key === item.key);
+  if (line) line.qty++;
+  else {
+    // Rückgaben ans Ende, Produkte davor
+    const entry = { ...item, qty: 1 };
+    if (item.kind === "p") {
+      const firstRet = cart.findIndex(l => l.kind === "r");
+      firstRet < 0 ? cart.push(entry) : cart.splice(firstRet, 0, entry);
+    } else cart.push(entry);
+  }
+  given = null;
+  hideToast();
+  render();
+}
+
+function changeQty(key, d) {
+  const i = cart.findIndex(l => l.key === key);
+  if (i < 0) return;
+  cart[i].qty += d;
+  if (cart[i].qty <= 0) cart.splice(i, 1);
+  given = null;
+  render();
+}
+
+function totals() {
+  let goods = 0, pfand = 0, out = 0, back = 0;
+  const pfandValues = new Set();
+  cart.forEach(l => {
+    goods += l.price * l.qty;
+    pfand += l.pfand * l.qty;
+    if (l.kind === "p" && l.pfand > 0) { out += l.qty; pfandValues.add(l.pfand); }
+    if (l.kind === "r") { back += l.qty; pfandValues.add(-l.pfand); }
+  });
+  return { goods, pfand, total: goods + pfand, out, back, unit: pfandValues.size === 1 ? [...pfandValues][0] : null };
+}
+
+/* ---------- Anzeige ---------- */
+function render() {
+  const lines = $("lines");
+  lines.innerHTML = "";
+  if (!cart.length) lines.appendChild(el("div", "empty", "Produkt antippen"));
+
+  cart.forEach(l => {
+    const row = el("div", "line" + (l.kind === "r" ? " ret" : ""));
+    const st = el("div", "stepper");
+    const minus = el("button", "", "−"); minus.setAttribute("aria-label", "weniger");
+    const plus = el("button", "", "+"); plus.setAttribute("aria-label", "mehr");
+    minus.addEventListener("click", () => changeQty(l.key, -1));
+    plus.addEventListener("click", () => changeQty(l.key, +1));
+    st.append(minus, el("span", "qty num", l.qty), plus);
+
+    const mid = el("div");
+    if (l.kind === "r") {
+      mid.appendChild(el("div", "lname", l.name + " zurück"));
+      mid.appendChild(el("div", "lsub num", l.qty + " × " + eur(l.pfand)));
+      row.append(st, mid, el("div", "lamt num", ""));
+    } else {
+      mid.appendChild(el("div", "lname", l.name));
+      mid.appendChild(el("div", "lsub num", l.qty + " × " + eur(l.price) + (l.pfand ? " + Pfand" : "")));
+      row.append(st, mid, el("div", "lamt num", eur(l.price * l.qty)));
+    }
+    lines.appendChild(row);
+  });
+
+  const t = totals();
+  $("tGoods").textContent = eur(t.goods);
+  $("tPfand").textContent = eur(t.pfand, true);
+  let hint = "";
+  if (t.out || t.back) {
+    const net = t.out - t.back;
+    hint = `(${t.out} raus · ${t.back} zurück = ${net > 0 ? "+" : ""}${net}${t.unit ? " × " + eur(t.unit) : ""})`;
+  }
+  $("tPfandHint").textContent = hint;
+
+  const grand = $("grand");
+  const payout = t.total < 0;
+  grand.classList.toggle("payout", payout);
+  $("grandLabel").textContent = payout ? "Auszahlen" : "Zu zahlen";
+  const gv = $("grandValue");
+  gv.textContent = eur(Math.abs(t.total));
+  if (lastTotal !== null && lastTotal !== t.total) { gv.classList.remove("bump"); void gv.offsetWidth; gv.classList.add("bump"); }
+  lastTotal = t.total;
+
+  renderCash(t.total);
+  $("nextBtn").disabled = cart.length === 0;
+  updateBadges();
+  lsSet(CART_KEY, JSON.stringify(cart));
+}
+
+function renderCash(total) {
+  const box = $("cashBtns");
+  box.innerHTML = "";
+  const show = total > 0;
+  $("cash").hidden = !show;
+  if (!show) { $("change").hidden = true; return; }
+
+  const opts = [{ label: "Passend", v: total }].concat(CASH_NOTES.map(v => ({ label: String(v / 100), v })));
+  opts.forEach(o => {
+    const b = el("button", "num" + (given === o.v ? " sel" : ""), o.label);
+    b.disabled = o.v < total;
+    b.addEventListener("click", () => { given = (given === o.v) ? null : o.v; renderCash(total); });
+    box.appendChild(b);
+  });
+
+  const ch = $("change");
+  if (given != null && given >= total) {
+    ch.hidden = false;
+    $("changeValue").textContent = eur(given - total);
+  } else ch.hidden = true;
+}
+
+/* ---------- Nächster Kunde / Rückgängig ---------- */
+function nextCustomer() {
+  if (!cart.length) return;
+  undoState = { cart: JSON.parse(JSON.stringify(cart)), given, saleId: null };
+  if (API) {
+    const sale = {
+      id: randomId(), ts: Date.now(), queuedAt: Date.now(),
+      device: deviceId(), device_name: deviceName(), given,
+      items: cart.map(l => ({ kind: l.kind, name: l.name, qty: l.qty, price: l.price, pfand: l.pfand })),
+    };
+    undoState.saleId = sale.id;
+    enqueue(sale);
+  }
+  cart = []; given = null;
+  render();
+  showToast("Bon abgeschlossen");
+}
+function showToast(text) {
+  $("toastText").textContent = text;
+  $("toast").classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 6000);
+}
+function hideToast() { $("toast").classList.remove("show"); undoState = null; }
+$("undoBtn").addEventListener("click", () => {
+  if (!undoState) return;
+  if (undoState.saleId) dequeue(undoState.saleId);
+  cart = undoState.cart; given = undoState.given;
+  hideToast();
+  render();
+});
+$("nextBtn").addEventListener("click", nextCustomer);
+
+/* ---------- Bildschirm wach halten ---------- */
+let wakeLock = null;
+async function keepAwake() {
+  try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } } catch (e) {}
+}
+document.addEventListener("pointerdown", keepAwake, { passive: true });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { keepAwake(); loadLists(); flush(); } });
+
+/* ---------- Start ---------- */
+if (STAND) { $("standName").textContent = STAND; document.title = STAND + " · Standkasse"; }
+try { const saved = JSON.parse(lsGet(CART_KEY) || "[]"); if (Array.isArray(saved)) cart = saved.filter(l => l && l.key && l.qty > 0); } catch (e) {}
+render();
+loadLists().then(flush);
+</script>
+</body>
+</html>

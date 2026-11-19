@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Standkasse einrichten",
+        "description": "Stellt die Kassenseite für die Stände bereit (öffentlich unter /kasse/) und protokolliert abgeschlossene Bons. Stände, Betreiber und Produktlisten verwaltest du danach im Panel »Standkasse«."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Die Standkasse ist bereits eingerichtet."
+    }
+  }
+}
