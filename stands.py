@@ -74,13 +74,31 @@ class StandStore:
     def __init__(self, hass: HomeAssistant) -> None:
         self._store: Store[dict[str, Any]] = Store(hass, STORE_VERSION, STORE_KEY)
         self.stands: dict[str, dict[str, Any]] = {}
+        self.devices: dict[str, str] = {}   # Geräte-ID -> Name
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.stands = {s["id"]: s for s in data.get("stands", [])}
+        self.devices = dict(data.get("devices", {}))
 
     async def _save(self) -> None:
-        await self._store.async_save({"stands": list(self.stands.values())})
+        await self._store.async_save({"stands": list(self.stands.values()), "devices": self.devices})
+
+    async def async_set_device_name(self, device_id: str, name: str) -> None:
+        device_id = str(device_id or "")[:64]
+        if not device_id:
+            raise ValueError("Geräte-ID fehlt")
+        name = _clean(name, 40)
+        if name:
+            self.devices[device_id] = name
+        else:
+            self.devices.pop(device_id, None)
+        await self._save()
+
+    async def async_reset(self) -> None:
+        self.stands = {}
+        self.devices = {}
+        await self._save()
 
     def get(self, stand_id: str | None) -> dict[str, Any] | None:
         return self.stands.get(stand_id or "")
@@ -110,6 +128,8 @@ class StandStore:
             stand["deposits"] = str(payload.get("deposits") or "")[:5000]
         if "active" in payload:
             stand["active"] = bool(payload["active"])
+        if "cash_helper" in payload:
+            stand["cash_helper"] = bool(payload["cash_helper"])
         self.stands[stand["id"]] = stand
         await self._save()
         return stand
@@ -130,7 +150,8 @@ class StandStore:
         products, pw = parse_list(stand.get("products", ""), "p")
         deposits, dw = parse_list(stand.get("deposits", ""), "d")
         return {"id": stand["id"], "name": stand["name"], "operator": stand["operator"],
-                "products": products, "deposits": deposits, "warnings": pw + dw}
+                "products": products, "deposits": deposits, "warnings": pw + dw,
+                "cash_helper": bool(stand.get("cash_helper", False))}
 
     @staticmethod
     def admin_view(stand: dict[str, Any], with_key: bool) -> dict[str, Any]:

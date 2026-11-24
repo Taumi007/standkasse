@@ -127,6 +127,7 @@ tr.sum td { font-weight: 600; border-top: 2px solid var(--divider-color); }
 .form .full { grid-column: 1 / -1; }
 @media (max-width: 700px) { .form { grid-template-columns: 1fr; } }
 .items { font-size: 13px; color: var(--sk-muted); }
+button.icon { border: 0; background: transparent; color: var(--primary-color); cursor: pointer; font-size: 15px; padding: 0 4px; }
 .preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .pv { font-size: 13px; border: 1px solid var(--divider-color); border-radius: 6px; padding: 3px 8px; }
 .pv.ret { color: var(--success-color, #43a047); border-color: currentColor; }
@@ -207,10 +208,13 @@ class StandkassePanel extends HTMLElement {
 
   show(tab) {
     this.tab = tab;
-    this.tabsEl.replaceChildren(...[["report", "Auswertung"], ["bons", "Bons"], ["stands", "Stände"]]
+    const tabs = [["report", "Auswertung"], ["bons", "Bons"], ["stands", "Stände"]];
+    if (this.admin) tabs.push(["settings", "Einstellungen"]);
+    this.tabsEl.replaceChildren(...tabs
       .map(([k, l]) => h("button", { class: k === tab ? "on" : "", onclick: () => this.show(k) }, l)));
     if (tab === "report") this.loadReport();
     else if (tab === "bons") this.loadBons(true);
+    else if (tab === "settings") this.loadSettings();
     else this.renderStands();
   }
 
@@ -310,7 +314,8 @@ class StandkassePanel extends HTMLElement {
     const devTable = h("table", {},
       h("tr", {}, h("th", {}, "Gerät"), h("th", { class: "r" }, "Bons"), h("th", { class: "r" }, "Summe"), h("th", { class: "r" }, "Letzter Bon")),
       devices.map((d) => h("tr", {},
-        h("td", {}, d.device_name || h("span", { class: "muted" }, "ohne Namen · " + (d.device_id || "?").slice(0, 6))),
+        h("td", {}, d.device_name || h("span", { class: "muted" }, "ohne Namen · " + (d.device_id || "?").slice(0, 6)),
+          this.admin ? h("button", { class: "icon", title: "Gerät benennen", onclick: () => this.renameDevice(d) }, "✎") : null),
         h("td", { class: "r" }, d.bons), h("td", { class: "r" }, eur(d.total)), h("td", { class: "r muted" }, dt(d.last)))));
 
     let hourChart = null;
@@ -403,6 +408,66 @@ class StandkassePanel extends HTMLElement {
     this.loadBons(true);
   }
 
+  // ------------------------------------------------------------ Einstellungen
+  async renameDevice(d) {
+    const n = prompt(`Name für Gerät ${(d.device_id || "").slice(0, 6)}:`, d.device_name || "");
+    if (n === null) return;
+    await this.api("POST", "devices", { id: d.device_id, name: n });
+    if (this.tab === "report") this.loadReport(true); else this.loadSettings();
+  }
+
+  async loadSettings() {
+    try { this.devices = (await this.api("GET", "devices")).devices; this.error = ""; }
+    catch (e) { this.error = "Geräte konnten nicht geladen werden: " + (e.body?.error || e.message || e.error || e); }
+    if (this.tab === "settings") this.renderSettings();
+  }
+
+  renderSettings() {
+    const devs = this.devices || [];
+    const devTable = devs.length ? h("table", {},
+      h("tr", {}, h("th", {}, "Gerät"), h("th", {}, "Name"), h("th", {}, "Stand"), h("th", { class: "r" }, "Bons"), h("th", { class: "r" }, "Letzter Bon"), h("th")),
+      devs.map((d) => {
+        const inp = h("input", { value: d.device_name || "", placeholder: "z. B. iPad 2", style: "width:100%" });
+        const btn = h("button", { class: "btn flat small", onclick: async () => {
+          await this.api("POST", "devices", { id: d.device_id, name: inp.value });
+          btn.textContent = "Gespeichert ✓"; setTimeout(() => (btn.textContent = "Speichern"), 1500);
+        } }, "Speichern");
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
+        return h("tr", {}, h("td", { class: "muted", style: "font-family:ui-monospace,Menlo,monospace" }, (d.device_id || "").slice(0, 6)),
+          h("td", {}, inp), h("td", { class: "muted" }, d.stands || ""), h("td", { class: "r" }, d.bons),
+          h("td", { class: "r muted" }, d.last ? dt(d.last) : "–"), h("td", { class: "r" }, btn));
+      })) : h("div", { class: "muted" }, "Noch keine Geräte – ein Gerät erscheint hier nach seinem ersten Bon.");
+
+    const reset = async (stands) => {
+      const what = stands ? "ALLE Bons, ALLE Stände (Links werden ungültig) und alle Gerätenamen" : "ALLE Bons aller Stände";
+      if (prompt(`${what} endgültig löschen? Das lässt sich nicht rückgängig machen.\nZum Bestätigen LÖSCHEN eintippen:`) !== "LÖSCHEN") return;
+      try {
+        const r = await this.api("POST", "reset", { stands });
+        alert(`Gelöscht: ${r.deleted} Bons${r.stands_reset ? ", alle Stände und Gerätenamen" : ""}.`);
+        await this.loadStands();
+        this.loadSettings();
+      } catch (e) { alert("Fehler: " + (e.body?.error || e.message || e.error || e)); }
+    };
+
+    this.main.replaceChildren(...[this.errorBox(),
+      h("div", { class: "card" },
+        h("div", { class: "op-title" }, "Geräte"),
+        h("div", { class: "muted", style: "margin-bottom:10px;font-size:14px" },
+          "Namen gelten für Auswertung und Bon-Liste und werden auf dem Tablet angezeigt. Am Tablet selbst geht es über »Gerät benennen« unter dem Standnamen."),
+        devTable),
+      h("div", { class: "card" },
+        h("div", { class: "op-title" }, "Daten zurücksetzen"),
+        h("div", { class: "muted", style: "margin-bottom:12px;font-size:14px" },
+          "Hinweis: Integration löschen und neu einrichten setzt nichts zurück – die Daten bleiben absichtlich erhalten. Einzelne Bons oder Zeiträume löschst du unter »Bons«."),
+        h("div", { class: "bar", style: "margin:0" },
+          h("button", { class: "btn danger", onclick: () => reset(false) }, "Alle Bons löschen"),
+          h("span", { class: "muted", style: "font-size:13px" }, "Stände, Produkte und Links bleiben erhalten – z. B. vor einem neuen Markt.")),
+        h("div", { class: "bar", style: "margin:12px 0 0" },
+          h("button", { class: "btn danger", onclick: () => reset(true) }, "Alles zurücksetzen"),
+          h("span", { class: "muted", style: "font-size:13px" }, "Zusätzlich alle Stände und Gerätenamen – Auslieferungszustand."))),
+    ].filter(Boolean));
+  }
+
   // ------------------------------------------------------------ Stände
   link(s) { return `${location.origin}/kasse/?s=${encodeURIComponent(s.id)}&k=${encodeURIComponent(s.key)}`; }
 
@@ -464,6 +529,7 @@ class StandkassePanel extends HTMLElement {
     const operator = h("input", { value: s.operator, placeholder: "z. B. Musikverein" });
     operator.setAttribute("list", "ops");
     const active = h("input", { type: "checkbox", checked: s.active !== false });
+    const cash = h("input", { type: "checkbox", checked: !!s.cash_helper });
 
     let draft = fromStand(s);
     let state = validate(draft);
@@ -527,7 +593,7 @@ class StandkassePanel extends HTMLElement {
       try {
         await this.api("POST", "stands", {
           id: s.id, name: name.value, operator: operator.value, products: csv.products,
-          deposits: csv.deposits, active: active.checked,
+          deposits: csv.deposits, active: active.checked, cash_helper: cash.checked,
         });
         await this.loadStands();
         this.editing = null;
@@ -548,7 +614,8 @@ class StandkassePanel extends HTMLElement {
       h("div", { class: "form" },
         h("label", {}, "Name des Standes", name),
         h("label", {}, "Betreiber (wird getrennt abgerechnet)", operator),
-        h("label", { class: "full", style: "flex-direction:row;align-items:center;gap:8px" }, active, "Stand aktiv (Link funktioniert)"),
+        h("label", { style: "flex-direction:row;align-items:center;gap:8px" }, active, "Stand aktiv (Link funktioniert)"),
+        h("label", { style: "flex-direction:row;align-items:center;gap:8px" }, cash, "Rückgeld-Rechner am Tablet anzeigen (Scheine antippen)"),
         editorBox, summary, msg, actions));
   }
 

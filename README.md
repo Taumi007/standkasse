@@ -9,7 +9,8 @@ Custom Integration für kleine Marktstände (z. B. Weihnachtsmarkt): eine schnel
 **Kassenseite für die Stände** (öffentlich unter `/kasse/`, ohne HA-Login)
 - Große Kacheln für Produkte und Pfand-Rückgaben, lesbar aus ca. 1 m Entfernung (iPad, Android-Tablets, quer und hoch)
 - Pfand wird verrechnet: „4 raus · 2 zurück = +2 × 3,00 €“, negative Summen werden als **Auszahlen** angezeigt
-- Rückgeld-Rechner (Passend/5/10/20/50 €), „Nächster Kunde“ mit Rückgängig
+- Optionaler Rückgeld-Rechner pro Stand: Scheine nacheinander antippen (z. B. 20 + 5), zeigt „Fehlt noch“ bzw. „Rückgeld“
+- „Nächster Kunde“ mit Rückgängig; Gerät direkt am Tablet benennen
 - Bon und Produktliste bleiben bei Neuladen oder WLAN-Ausfall erhalten; Bons werden gepuffert und nachgeschickt
 - Bildschirm bleibt an (Wake Lock)
 
@@ -18,6 +19,9 @@ Custom Integration für kleine Marktstände (z. B. Weihnachtsmarkt): eine schnel
 - Jeder Stand hat einen eigenen Link mit eigenem Schlüssel, der sich sperren oder neu erzeugen lässt
 - **Auswertung getrennt pro Betreiber** (für Stände, die finanziell nicht zusammengehören): Kassa, Waren, Pfand netto, Tassen draußen, Stück je Produkt, Geräte, Umsatz pro Stunde; Markttag von 06:00 bis 06:00; CSV-Export
 - **Bon-Liste** mit Positionen; Admins können Bons löschen (z. B. Testdaten)
+- **Einstellungen**: Geräte zentral benennen, alle Bons löschen oder alles zurücksetzen
+
+> Integration löschen und neu einrichten setzt die Daten **nicht** zurück – dafür gibt es die Knöpfe unter *Einstellungen*.
 
 ## Installation
 
@@ -29,7 +33,7 @@ Custom Integration für kleine Marktstände (z. B. Weihnachtsmarkt): eine schnel
 ## Am Tablet
 
 - Link öffnen und zum Home-Bildschirm hinzufügen (Vollbild). Auf dem iPad empfiehlt sich zusätzlich der *Geführte Zugriff*.
-- Einmal auf den Standnamen tippen und dem Gerät einen Namen geben (z. B. „iPad 2“) – so ist es in der Auswertung erkennbar.
+- Über »Gerät benennen« unter dem Standnamen einen Namen vergeben (z. B. „iPad 2“) – oder zentral im Panel unter *Einstellungen → Geräte*.
 - Die Tablets müssen Home Assistant im Netzwerk erreichen; kurze Aussetzer überbrückt der Offline-Puffer.
 
 ## Listenformat
@@ -62,6 +66,9 @@ Ohne Integration funktioniert die Kassenseite auch als reiner Rechner mit CSV-Da
 | GET | `/api/standkasse/report?start=…&end=…` | HA-Nutzer |
 | GET / DELETE | `/api/standkasse/bons` | HA-Nutzer / Admin |
 | GET / POST / DELETE | `/api/standkasse/stands` | HA-Nutzer / Admin |
+| POST | `/api/standkasse/device` | Stand-Schlüssel |
+| GET / POST | `/api/standkasse/devices` | HA-Nutzer / Admin |
+| POST | `/api/standkasse/reset` | Admin |
 
 ## Lizenz
 

@@ -89,9 +89,9 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .tile.hit { animation: hit .35s ease; }
 @keyframes hit { 0% { background: var(--tile-hit); } 100% { background: var(--tile); } }
 .tile .name { font-size: 24px; font-weight: 700; line-height: 1.15; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
-.tile .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
-.tile .price { font-size: 25px; font-weight: 800; color: var(--accent); white-space: nowrap; }
-.tile .dep { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.tile .meta { display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 1px; }
+.tile .price { font-size: 25px; font-weight: 800; color: var(--accent); white-space: nowrap; line-height: 1.1; }
+.tile .dep { font-size: 15px; color: var(--muted); line-height: 1.2; }
 .tile .badge {
   position: absolute; top: -7px; right: -7px;
   min-width: 36px; height: 36px; padding: 0 9px; border-radius: 18px;
@@ -113,6 +113,10 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
   border-bottom: 1px solid var(--line);
 }
 .bon-head .stand { font-size: 22px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bon-head .who { min-width: 0; }
+.device { margin-top: 4px; border: 1px solid var(--line); background: transparent; color: var(--muted);
+  border-radius: 8px; padding: 4px 10px; font-size: 15px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device.unnamed { color: var(--accent); border-color: var(--accent); }
 .status { font-size: 14px; color: var(--muted); text-align: right; }
 .status.warn { color: var(--accent); }
 .status.err { color: var(--danger); }
@@ -155,14 +159,16 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 
 /* ---------- Bargeld ---------- */
 .cash { padding: 10px 16px 0; }
-.cash-btns { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 8px; }
+.cash-btns { display: grid; grid-template-columns: repeat(4, 1fr) 1.5fr 0.8fr; gap: 8px; }
 .cash-btns button { white-space: nowrap; padding: 0 4px; }
 .cash-btns button {
   height: 54px; border-radius: 12px; border: 2px solid var(--line); background: transparent;
   font-size: 21px; font-weight: 700;
 }
-.cash-btns button.sel { background: var(--text); color: var(--bg); border-color: var(--text); }
-.cash-btns button:disabled { opacity: .25; }
+.cash-btns button:active { background: var(--tile-hit); }
+.cash-btns button.clear { color: var(--muted); }
+.change .given { font-size: 16px; color: var(--muted); font-weight: 600; }
+.change.short { background: #3a1d1d; color: #ffb4b4; }
 .change {
   margin-top: 10px; padding: 10px 14px; border-radius: 12px;
   background: #2a2410; color: var(--accent);
@@ -221,7 +227,10 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 
   <aside class="right">
     <div class="bon-head">
-      <div class="stand" id="standName">Bon</div>
+      <div class="who">
+        <div class="stand" id="standName">Bon</div>
+        <button class="device" id="deviceBtn" hidden></button>
+      </div>
       <div class="status" id="status"></div>
     </div>
     <div class="lines" id="lines"></div>
@@ -234,7 +243,7 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 
     <div class="cash" id="cash">
       <div class="cash-btns" id="cashBtns"></div>
-      <div class="change" id="change" hidden><span class="label">Rückgeld</span><span class="value num" id="changeValue"></span></div>
+      <div class="change" id="change" hidden><div><div class="label" id="changeLabel">Rückgeld</div><div class="given num" id="givenText"></div></div><span class="value num" id="changeValue"></span></div>
     </div>
 
     <div class="actions">
@@ -272,6 +281,8 @@ let products = [];   // {key, name, price, pfand}   (Cent)
 let deposits = [];   // {key, name, value}          (Cent)
 let cart = [];       // {key, kind:'p'|'r', name, price, pfand, qty}
 let given = null;    // Cent, oder null
+let givenNotes = []; // angetippte Scheine (Cent), "exact" = passend
+let cashEnabled = params.get("rueckgeld") === "1";
 let undoState = null, toastTimer = null;
 let lastTotal = null;
 
@@ -346,7 +357,7 @@ async function loadStand() {
   const cacheKey = LS + "stand:" + SID;
   let cfg = null, offline = false, error = "";
   try {
-    const r = await fetch(`${API}/client?s=${encodeURIComponent(SID)}&k=${encodeURIComponent(SKEY)}`, { cache: "no-store" });
+    const r = await fetch(`${API}/client?s=${encodeURIComponent(SID)}&k=${encodeURIComponent(SKEY)}&d=${deviceId()}`, { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(j.error || "HTTP " + r.status), { fatal: r.status === 403 });
     cfg = j;
@@ -362,6 +373,9 @@ async function loadStand() {
   if (error) cfg = null;
   products = (cfg?.products || []).map(p => ({ key: "p:" + p.name, name: p.name, price: p.price, pfand: p.pfand }));
   deposits = (cfg?.deposits || []).map(d => ({ key: "r:" + d.name, name: d.name, value: d.value }));
+  if (cfg?.device_name) lsSet(LS + "deviceName", cfg.device_name);   // im Panel vergebener Name gewinnt
+  cashEnabled = !!cfg?.cash_helper;
+  renderDevice();
   if (cfg?.name) { STAND = cfg.name; $("standName").textContent = STAND; document.title = STAND + " · Standkasse"; }
 
   const n = $("notices");
@@ -415,7 +429,7 @@ function updateStatus() {
     text = (text ? text + " · " : "") + `${waiting} Bon${waiting === 1 ? "" : "s"} nicht gesendet`;
     if (!cls.includes("err")) cls = "status warn";
   }
-  if (!text && API) text = deviceName() ? "✓ " + deviceName() : "✓ verbunden";
+  if (!text && API) text = "✓ verbunden";
   st.textContent = text; st.className = cls;
 }
 
@@ -431,10 +445,23 @@ function deviceId() {
   return id;
 }
 function deviceName() { return lsGet(LS + "deviceName") || ""; }
-$("standName").addEventListener("click", () => {
-  if (!API) return;
+function renderDevice() {
+  const b = $("deviceBtn");
+  b.hidden = !API;
+  const n = deviceName();
+  b.textContent = n ? "Gerät: " + n + " ✎" : "Gerät benennen ✎";
+  b.classList.toggle("unnamed", !n);
+}
+$("deviceBtn").addEventListener("click", async () => {
   const n = prompt("Name dieses Geräts (z. B. „iPad 2“):", deviceName());
-  if (n !== null) { lsSet(LS + "deviceName", n.trim().slice(0, 40)); updateStatus(); }
+  if (n === null) return;
+  const name = n.trim().slice(0, 40);
+  lsSet(LS + "deviceName", name);
+  renderDevice();
+  try {
+    await fetch(`${API}/device`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ s: SID, k: SKEY, d: deviceId(), name }) });
+  } catch (e) { /* Name geht spätestens mit dem nächsten Bon mit */ }
 });
 
 /* ---------- Bons senden (mit Warteschlange) ---------- */
@@ -483,8 +510,8 @@ function renderTiles() {
     b.dataset.key = d.key;
     b.appendChild(el("div", "name", d.name + " zurück"));
     const m = el("div", "meta");
-    m.appendChild(el("span", "dep", "Pfand"));
     m.appendChild(el("span", "price num", eur(-d.value)));
+    m.appendChild(el("span", "dep", "Pfand"));
     b.appendChild(m);
     b.addEventListener("click", () => { add({ key: d.key, kind: "r", name: d.name, price: 0, pfand: -d.value }); hit(b); });
     rg.appendChild(b);
@@ -495,8 +522,8 @@ function renderTiles() {
     b.dataset.key = p.key;
     b.appendChild(el("div", "name", p.name));
     const m = el("div", "meta");
-    m.appendChild(el("span", "dep", p.pfand ? "+ " + eur(p.pfand) + " Pfand" : ""));
     m.appendChild(el("span", "price num", eur(p.price)));
+    if (p.pfand) m.appendChild(el("span", "dep num", "+ " + eur(p.pfand) + " Pfand"));
     b.appendChild(m);
     b.addEventListener("click", () => { add({ key: p.key, kind: "p", name: p.name, price: p.price, pfand: p.pfand }); hit(b); });
     pg.appendChild(b);
@@ -531,7 +558,7 @@ function add(item) {
       firstRet < 0 ? cart.push(entry) : cart.splice(firstRet, 0, entry);
     } else cart.push(entry);
   }
-  given = null;
+  given = null; givenNotes = [];
   hideToast();
   render();
 }
@@ -541,7 +568,7 @@ function changeQty(key, d) {
   if (i < 0) return;
   cart[i].qty += d;
   if (cart[i].qty <= 0) cart.splice(i, 1);
-  given = null;
+  given = null; givenNotes = [];
   render();
 }
 
@@ -613,29 +640,38 @@ function render() {
 function renderCash(total) {
   const box = $("cashBtns");
   box.innerHTML = "";
-  const show = total > 0;
+  const show = cashEnabled && total > 0;
   $("cash").hidden = !show;
   if (!show) { $("change").hidden = true; return; }
 
-  const opts = [{ label: "Passend", v: total }].concat(CASH_NOTES.map(v => ({ label: String(v / 100), v })));
-  opts.forEach(o => {
-    const b = el("button", "num" + (given === o.v ? " sel" : ""), o.label);
-    b.disabled = o.v < total;
-    b.addEventListener("click", () => { given = (given === o.v) ? null : o.v; renderCash(total); });
+  const set = (notes) => { givenNotes = notes; given = notes.length ? notes.reduce((a, n) => a + (n === "exact" ? total : n), 0) : null; renderCash(total); };
+  CASH_NOTES.forEach(v => {
+    const b = el("button", "num", String(v / 100));
+    b.addEventListener("click", () => set(givenNotes.filter(n => n !== "exact").concat(v)));   // Scheine addieren
     box.appendChild(b);
   });
+  const exact = el("button", "", "Passend");
+  exact.addEventListener("click", () => set(["exact"]));
+  const clear = el("button", "clear", "✕");
+  clear.setAttribute("aria-label", "Gegeben zurücksetzen");
+  clear.addEventListener("click", () => set([]));
+  box.append(exact, clear);
 
   const ch = $("change");
-  if (given != null && given >= total) {
-    ch.hidden = false;
-    $("changeValue").textContent = eur(given - total);
-  } else ch.hidden = true;
+  if (given == null) { ch.hidden = true; return; }
+  ch.hidden = false;
+  const short = given < total;
+  ch.classList.toggle("short", short);
+  $("changeLabel").textContent = short ? "Fehlt noch" : "Rückgeld";
+  $("changeValue").textContent = eur(Math.abs(given - total));
+  $("givenText").textContent = givenNotes[0] === "exact" ? "passend gegeben"
+    : "gegeben " + givenNotes.map(n => n / 100).join(" + ") + (givenNotes.length > 1 ? " = " + eur(given) : " €");
 }
 
 /* ---------- Nächster Kunde / Rückgängig ---------- */
 function nextCustomer() {
   if (!cart.length) return;
-  undoState = { cart: JSON.parse(JSON.stringify(cart)), given, saleId: null };
+  undoState = { cart: JSON.parse(JSON.stringify(cart)), given, givenNotes, saleId: null };
   if (API) {
     const sale = {
       id: randomId(), ts: Date.now(), queuedAt: Date.now(),
@@ -645,7 +681,7 @@ function nextCustomer() {
     undoState.saleId = sale.id;
     enqueue(sale);
   }
-  cart = []; given = null;
+  cart = []; given = null; givenNotes = [];
   render();
   showToast("Bon abgeschlossen");
 }
@@ -659,7 +695,7 @@ function hideToast() { $("toast").classList.remove("show"); undoState = null; }
 $("undoBtn").addEventListener("click", () => {
   if (!undoState) return;
   if (undoState.saleId) dequeue(undoState.saleId);
-  cart = undoState.cart; given = undoState.given;
+  cart = undoState.cart; given = undoState.given; givenNotes = undoState.givenNotes || [];
   hideToast();
   render();
 });
@@ -676,6 +712,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 /* ---------- Start ---------- */
 if (STAND) { $("standName").textContent = STAND; document.title = STAND + " · Standkasse"; }
 try { const saved = JSON.parse(lsGet(CART_KEY) || "[]"); if (Array.isArray(saved)) cart = saved.filter(l => l && l.key && l.qty > 0); } catch (e) {}
+renderDevice();
 render();
 loadLists().then(flush);
 </script>

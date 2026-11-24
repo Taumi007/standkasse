@@ -93,7 +93,33 @@ class ClientConfigView(HomeAssistantView):
             return _json({"error": "Unbekannter Stand oder ungültiger Link"}, HTTPStatus.FORBIDDEN)
         if not stand.get("active", True):
             return _json({"error": f"Stand »{stand['name']}« ist deaktiviert"}, HTTPStatus.FORBIDDEN)
-        return _json(StandStore.client_config(stand))
+        cfg = StandStore.client_config(stand)
+        cfg["device_name"] = data[1].devices.get(request.query.get("d") or "", "")
+        return _json(cfg)
+
+
+class ClientDeviceView(HomeAssistantView):
+    """Tablet benennt sich selbst (mit Stand-Schlüssel)."""
+
+    url = API_BASE + "/device"
+    name = "api:standkasse:device"
+    requires_auth = False
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = _data(request.app[KEY_HASS])
+        if not data:
+            return _unavailable()
+        try:
+            body = await request.json()
+        except ValueError:
+            return _json({"error": "Kein JSON"}, HTTPStatus.BAD_REQUEST)
+        if not isinstance(body, dict) or not data[1].authenticate(body.get("s"), body.get("k")):
+            return _json({"error": "Unbekannter Stand oder ungültiger Link"}, HTTPStatus.FORBIDDEN)
+        try:
+            await data[1].async_set_device_name(body.get("d"), body.get("name") or "")
+        except ValueError as err:
+            return _json({"error": str(err)}, HTTPStatus.BAD_REQUEST)
+        return _json({"ok": True})
 
 
 class ClientSalesView(HomeAssistantView):
@@ -146,6 +172,7 @@ class ReportView(HomeAssistantView):
             return _unavailable()
         result = await hass.async_add_executor_job(
             data[0].report, _int_param(request, "start"), _int_param(request, "end"))
+        _apply_names(result["devices"], data[1])
         return _json(result)
 
 
@@ -163,6 +190,7 @@ class BonsView(HomeAssistantView):
         result = await hass.async_add_executor_job(
             data[0].sales, _int_param(request, "start"), _int_param(request, "end"),
             request.query.get("stand") or None, limit, offset)
+        _apply_names(result["sales"], data[1])
         return _json(result)
 
     async def delete(self, request: web.Request) -> web.Response:
@@ -223,4 +251,62 @@ class StandsView(HomeAssistantView):
         return _json({"ok": True})
 
 
-VIEWS = (ClientPageView, ClientConfigView, ClientSalesView, ReportView, BonsView, StandsView)
+class DevicesView(HomeAssistantView):
+    url = API_BASE + "/devices"
+    name = "api:standkasse:devices"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass = request.app[KEY_HASS]
+        data = _data(hass)
+        if not data:
+            return _unavailable()
+        devices = await hass.async_add_executor_job(data[0].devices)
+        known = {d["device_id"] for d in devices}
+        # zentral benannte Geräte ohne Bons trotzdem zeigen
+        devices += [{"device_id": i, "device_name": "", "bons": 0, "last": None, "stands": ""}
+                    for i in data[1].devices if i not in known]
+        _apply_names(devices, data[1])
+        return _json({"devices": devices})
+
+    async def post(self, request: web.Request) -> web.Response:
+        _require_admin(request)
+        data = _data(request.app[KEY_HASS])
+        if not data:
+            return _unavailable()
+        body = await request.json()
+        try:
+            await data[1].async_set_device_name(body.get("id"), body.get("name") or "")
+        except ValueError as err:
+            return _json({"error": str(err)}, HTTPStatus.BAD_REQUEST)
+        return _json({"ok": True})
+
+
+class ResetView(HomeAssistantView):
+    """Alle Bons löschen, optional auch Stände und Gerätenamen."""
+
+    url = API_BASE + "/reset"
+    name = "api:standkasse:reset"
+
+    async def post(self, request: web.Request) -> web.Response:
+        _require_admin(request)
+        hass = request.app[KEY_HASS]
+        data = _data(hass)
+        if not data:
+            return _unavailable()
+        body = await request.json()
+        n = await hass.async_add_executor_job(data[0].reset)
+        if body.get("stands") is True:
+            await data[1].async_reset()
+        return _json({"deleted": n, "stands_reset": body.get("stands") is True})
+
+
+def _apply_names(rows: list[dict[str, Any]], stands: StandStore) -> None:
+    """Zentral vergebene Gerätenamen haben Vorrang vor dem Namen im Bon."""
+    for r in rows:
+        name = stands.devices.get(r.get("device_id") or "")
+        if name:
+            r["device_name"] = name
+
+
+VIEWS = (ClientPageView, ClientConfigView, ClientDeviceView, ClientSalesView, ReportView, BonsView,
+         StandsView, DevicesView, ResetView)

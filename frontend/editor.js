@@ -145,9 +145,9 @@ table.ed input.warnf { border-color: var(--warning-color, #ffa600); }
 .tile { position: relative; min-height: 76px; border-radius: 10px; background: #272b33; color: #f4f5f7; padding: 8px 10px;
   display: flex; flex-direction: column; justify-content: space-between; gap: 6px; font-family: -apple-system, system-ui, sans-serif; }
 .tile .tn { font-size: 15px; font-weight: 700; line-height: 1.15; overflow-wrap: break-word; hyphens: auto; }
-.tile .tm { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.tile .tm { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
 .tile .tp { font-size: 16px; font-weight: 800; color: #ffb22e; white-space: nowrap; }
-.tile .td { font-size: 11px; color: #c8cdd6; white-space: nowrap; }
+.tile .td { font-size: 11px; color: #c8cdd6; }
 .tile.ret { background: #15301f; box-shadow: inset 0 0 0 2px #34c77b; }
 .tile.ret .tp { color: #34c77b; }
 .tile.bad { box-shadow: inset 0 0 0 2px var(--error-color, #db4437); }
@@ -286,15 +286,15 @@ export function productEditor(draft, onChange) {
       const c = parseMoney(d.value);
       const bad = Object.keys(state.deposits[i]?.errors || {}).length;
       tiles.push(h("div", { class: "tile ret" + (bad ? " bad" : "") }, h("div", { class: "tn" }, (d.name || "?") + " zurück"),
-        h("div", { class: "tm" }, h("span", { class: "td" }, "Pfand"), h("span", { class: "tp" }, Number.isFinite(c) ? "−" + eur(c) : "?"))));
+        h("div", { class: "tm" }, h("span", { class: "tp" }, Number.isFinite(c) ? "−" + eur(c) : "?"), h("span", { class: "td" }, "Pfand"))));
     });
     draft.products.forEach((p, i) => {
       if (isEmpty(p, "p")) return;
       const c = parseMoney(p.price);
       const bad = Object.keys(state.products[i]?.errors || {}).length;
       tiles.push(h("div", { class: "tile" + (bad ? " bad" : "") }, h("div", { class: "tn", lang: "de" }, p.name || "?"),
-        h("div", { class: "tm" }, h("span", { class: "td" }, p.pfand ? `+ ${eur(p.pfand)} Pfand` : ""),
-          h("span", { class: "tp" }, Number.isFinite(c) ? eur(c) : "?"))));
+        h("div", { class: "tm" }, h("span", { class: "tp" }, Number.isFinite(c) ? eur(c) : "?"),
+          p.pfand ? h("span", { class: "td" }, `+ ${eur(p.pfand)} Pfand`) : null)));
     });
     previewBox.replaceChildren(
       h("div", { class: "ed-title", style: "margin-top:18px" }, h("b", {}, "Vorschau am Tablet")),

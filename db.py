@@ -156,6 +156,20 @@ class SalesDB:
                 n += c.execute("DELETE FROM sales WHERE id=?", (sale_id,)).rowcount
             return n
 
+    def reset(self) -> int:
+        with self._lock, self.conn as c:
+            n = c.execute("DELETE FROM sales").rowcount
+            c.execute("DELETE FROM sale_items")
+        with self._lock:
+            self.conn.execute("VACUUM")
+        return n
+
+    def devices(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT device_id, MAX(device_name) AS device_name, COUNT(*) AS bons, MAX(ts) AS last,"
+                " GROUP_CONCAT(DISTINCT stand_name) AS stands FROM sales GROUP BY device_id ORDER BY last DESC")]
+
     def delete_range(self, start: int, end: int, stand_id: str | None) -> int:
         where, args = self._where(start, end, stand_id)
         with self._lock, self.conn as c:
